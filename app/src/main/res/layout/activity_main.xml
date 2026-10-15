@@ -1,398 +1,148 @@
-<?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:background="@color/bg_screen"
-    android:fitsSystemWindows="true"
-    android:layoutDirection="rtl"
-    android:orientation="vertical">
+package com.example.fidiboshot
 
-    <ScrollView
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:scrollbars="none">
+import android.content.Intent
+import android.content.res.ColorStateList
+import android.os.Bundle
+import android.provider.Settings
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
+import com.example.fidiboshot.databinding.ActivityMainBinding
 
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:padding="20dp">
+class MainActivity : AppCompatActivity() {
 
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="اسکرین‌شات خودکار فیدیبو"
-                android:textColor="@color/text_primary"
-                android:textSize="24sp"
-                android:textStyle="bold" />
+    private lateinit var binding: ActivityMainBinding
+    private var updating = false
 
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:layout_marginBottom="20dp"
-                android:text="ورق زدن و ذخیره‌ی صفحات به صورت خودکار"
-                android:textColor="@color/text_secondary"
-                android:textSize="14sp" />
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
 
-            <!-- وضعیت -->
-            <com.google.android.material.card.MaterialCardView
-                style="@style/Widget.Fidibo.Card"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content">
+        binding.etStartPage.setText(Prefs.start(this).toString())
+        binding.etEndPage.setText(Prefs.end(this).toString())
+        binding.etDelay.setText(Prefs.delay(this).toString())
 
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="18dp">
+        binding.toggleDirection.addOnButtonCheckedListener { _, id, checked ->
+            if (checked && !updating) Prefs.setRtl(this, id == R.id.btnRtl)
+        }
 
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:gravity="center_vertical"
-                        android:orientation="horizontal">
+        binding.btnOpenAccessibility.setOnClickListener {
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            Toast.makeText(this, "Fidibo Screenshot را پیدا کن و روشن کن", Toast.LENGTH_LONG).show()
+        }
 
-                        <View
-                            android:id="@+id/statusDot"
-                            android:layout_width="10dp"
-                            android:layout_height="10dp"
-                            android:background="@drawable/bg_dot" />
+        binding.switchFloating.setOnCheckedChangeListener { _, checked ->
+            if (updating) return@setOnCheckedChangeListener
+            val service = FidiboScreenshotService.instance
+            if (service == null) {
+                Toast.makeText(this, "اول Accessibility را روشن کن", Toast.LENGTH_LONG).show()
+                render()
+                return@setOnCheckedChangeListener
+            }
+            Prefs.setFloating(this, checked)
+            if (checked) service.showOverlay() else service.hideOverlay()
+        }
 
-                        <TextView
-                            android:id="@+id/tvStatusTitle"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginStart="10dp"
-                            android:text="آماده"
-                            android:textColor="@color/text_primary"
-                            android:textSize="18sp"
-                            android:textStyle="bold" />
-                    </LinearLayout>
+        binding.btnStart.setOnClickListener {
+            val start = binding.etStartPage.text.toString().toIntOrNull() ?: 1
+            val end = binding.etEndPage.text.toString().toIntOrNull() ?: 1
+            val delay = binding.etDelay.text.toString().toLongOrNull() ?: 3000L
+            val rtl = binding.toggleDirection.checkedButtonId == R.id.btnRtl
 
-                    <TextView
-                        android:id="@+id/tvStatusSub"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="6dp"
-                        android:text=""
-                        android:textColor="@color/text_secondary"
-                        android:textSize="14sp" />
+            if (end < start) {
+                Toast.makeText(this, "صفحه پایان باید بزرگ‌تر از شروع باشد", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            val service = FidiboScreenshotService.instance
+            if (service == null) {
+                Toast.makeText(this, "اول Accessibility را روشن کن", Toast.LENGTH_LONG).show()
+                return@setOnClickListener
+            }
+            Prefs.saveRange(this, start, end, delay)
+            service.startCapture(start, end, delay, rtl)
+            Toast.makeText(this, "برو داخل کتاب فیدیبو", Toast.LENGTH_LONG).show()
+        }
 
-                    <com.google.android.material.progressindicator.LinearProgressIndicator
-                        android:id="@+id/progress"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="14dp"
-                        app:trackColor="@color/brand_container"
-                        app:indicatorColor="@color/brand"
-                        app:trackCornerRadius="4dp"
-                        app:trackThickness="8dp" />
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
+        binding.btnStop.setOnClickListener {
+            FidiboScreenshotService.instance?.stopCapture()
+        }
+    }
 
-            <!-- محدوده صفحات -->
-            <com.google.android.material.card.MaterialCardView
-                style="@style/Widget.Fidibo.Card"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="14dp">
+    override fun onResume() {
+        super.onResume()
+        ShotState.listener = { render() }
+        render()
+    }
 
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="18dp">
+    override fun onPause() {
+        ShotState.listener = null
+        saveFields()
+        super.onPause()
+    }
 
-                    <TextView
-                        style="@style/Text.Section"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="محدوده صفحات" />
+    private fun saveFields() {
+        val s = binding.etStartPage.text.toString().toIntOrNull() ?: return
+        val e = binding.etEndPage.text.toString().toIntOrNull() ?: return
+        val d = binding.etDelay.text.toString().toLongOrNull() ?: return
+        Prefs.saveRange(this, s, e, d)
+    }
 
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="12dp"
-                        android:orientation="horizontal">
+    private fun tint(view: android.view.View, colorRes: Int) {
+        view.backgroundTintList = ColorStateList.valueOf(ContextCompat.getColor(this, colorRes))
+    }
 
-                        <com.google.android.material.textfield.TextInputLayout
-                            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:hint="صفحه شروع">
+    private fun render() {
+        updating = true
+        val connected = FidiboScreenshotService.instance != null
+        val running = ShotState.running
 
-                            <com.google.android.material.textfield.TextInputEditText
-                                android:id="@+id/etStartPage"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:inputType="number"
-                                android:maxLength="5" />
-                        </com.google.android.material.textfield.TextInputLayout>
+        // Accessibility
+        binding.tvAccStatus.text = if (connected) "فعال" else "غیرفعال"
+        tint(binding.accDot, if (connected) R.color.success else R.color.danger)
+        binding.btnOpenAccessibility.text = if (connected) "تنظیمات" else "فعال‌سازی"
 
-                        <com.google.android.material.textfield.TextInputLayout
-                            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_marginStart="12dp"
-                            android:layout_weight="1"
-                            android:hint="صفحه پایان">
+        // میانبر شناور
+        binding.switchFloating.isEnabled = connected
+        binding.switchFloating.isChecked = connected && Prefs.floating(this)
 
-                            <com.google.android.material.textfield.TextInputEditText
-                                android:id="@+id/etEndPage"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:inputType="number"
-                                android:maxLength="5" />
-                        </com.google.android.material.textfield.TextInputLayout>
-                    </LinearLayout>
+        // جهت
+        binding.toggleDirection.check(if (Prefs.rtl(this)) R.id.btnRtl else R.id.btnLtr)
 
-                    <com.google.android.material.textfield.TextInputLayout
-                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="12dp"
-                        android:hint="تأخیر بین صفحات (میلی‌ثانیه)"
-                        app:helperText="۳۰۰۰ میلی‌ثانیه = ۳ ثانیه">
+        // وضعیت
+        val total = (ShotState.end - ShotState.start + 1).coerceAtLeast(1)
+        when {
+            !connected -> {
+                binding.tvStatusTitle.text = "نیاز به فعال‌سازی"
+                binding.tvStatusSub.text = "سرویس Accessibility را روشن کن"
+                tint(binding.statusDot, R.color.warning)
+                binding.progress.progress = 0
+            }
+            running -> {
+                val done = (ShotState.current - ShotState.start).coerceIn(0, total)
+                binding.tvStatusTitle.text = "در حال اجرا"
+                binding.tvStatusSub.text = "صفحه ${ShotState.current} از ${ShotState.end}"
+                tint(binding.statusDot, R.color.brand)
+                binding.progress.max = total
+                binding.progress.progress = done
+            }
+            ShotState.finished -> {
+                binding.tvStatusTitle.text = "تمام شد"
+                binding.tvStatusSub.text = "${total} صفحه در Pictures/FidiboPages ذخیره شد"
+                tint(binding.statusDot, R.color.success)
+                binding.progress.max = total
+                binding.progress.progress = total
+            }
+            else -> {
+                binding.tvStatusTitle.text = "آماده"
+                binding.tvStatusSub.text = "تنظیمات را بررسی کن و شروع بزن"
+                tint(binding.statusDot, R.color.text_secondary)
+                binding.progress.progress = 0
+            }
+        }
 
-                        <com.google.android.material.textfield.TextInputEditText
-                            android:id="@+id/etDelay"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:inputType="number"
-                            android:maxLength="6" />
-                    </com.google.android.material.textfield.TextInputLayout>
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <!-- جهت ورق زدن -->
-            <com.google.android.material.card.MaterialCardView
-                style="@style/Widget.Fidibo.Card"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="14dp">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="18dp">
-
-                    <TextView
-                        style="@style/Text.Section"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="جهت ورق زدن" />
-
-                    <com.google.android.material.button.MaterialButtonToggleGroup
-                        android:id="@+id/toggleDirection"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="12dp"
-                        app:selectionRequired="true"
-                        app:singleSelection="true">
-
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/btnRtl"
-                            style="@style/Widget.Material3.Button.OutlinedButton"
-                            android:layout_width="0dp"
-                            android:layout_height="52dp"
-                            android:layout_weight="1"
-                            android:text="راست → چپ" />
-
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/btnLtr"
-                            style="@style/Widget.Material3.Button.OutlinedButton"
-                            android:layout_width="0dp"
-                            android:layout_height="52dp"
-                            android:layout_weight="1"
-                            android:text="چپ → راست" />
-                    </com.google.android.material.button.MaterialButtonToggleGroup>
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <!-- ========== بخش جدید: خروجی نهایی ========== -->
-            <com.google.android.material.card.MaterialCardView
-                style="@style/Widget.Fidibo.Card"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="14dp">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="18dp">
-
-                    <TextView
-                        style="@style/Text.Section"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="خروجی نهایی" />
-
-                    <com.google.android.material.button.MaterialButtonToggleGroup
-                        android:id="@+id/toggleOutput"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="12dp"
-                        app:selectionRequired="true"
-                        app:singleSelection="true">
-
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/btnOutputImage"
-                            style="@style/Widget.Material3.Button.OutlinedButton"
-                            android:layout_width="0dp"
-                            android:layout_height="52dp"
-                            android:layout_weight="1"
-                            android:text="تصاویر PNG" />
-
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/btnOutputPdf"
-                            style="@style/Widget.Material3.Button.OutlinedButton"
-                            android:layout_width="0dp"
-                            android:layout_height="52dp"
-                            android:layout_weight="1"
-                            android:text="یک فایل PDF" />
-                    </com.google.android.material.button.MaterialButtonToggleGroup>
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <!-- ========== بخش جدید: اسکرین موضعی ========== -->
-            <com.google.android.material.card.MaterialCardView
-                style="@style/Widget.Fidibo.Card"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="14dp">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="18dp">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:gravity="center_vertical"
-                        android:orientation="horizontal">
-
-                        <LinearLayout
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:orientation="vertical">
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="اسکرین موضعی (کراپ)"
-                                android:textColor="@color/text_primary"
-                                android:textSize="15sp" />
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="2dp"
-                                android:text="برش حاشیه‌های صفحه کتاب"
-                                android:textColor="@color/text_secondary"
-                                android:textSize="12sp" />
-                        </LinearLayout>
-
-                        <com.google.android.material.materialswitch.MaterialSwitch
-                            android:id="@+id/switchCrop"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content" />
-                    </LinearLayout>
-
-                    <LinearLayout
-                        android:id="@+id/layoutCropFields"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="12dp"
-                        android:orientation="vertical"
-                        android:visibility="gone">
-
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:orientation="horizontal">
-
-                            <com.google.android.material.textfield.TextInputLayout
-                                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:hint="بالا %">
-
-                                <com.google.android.material.textfield.TextInputEditText
-                                    android:id="@+id/etCropTop"
-                                    android:layout_width="match_parent"
-                                    android:layout_height="wrap_content"
-                                    android:inputType="number"
-                                    android:maxLength="2" />
-                            </com.google.android.material.textfield.TextInputLayout>
-
-                            <com.google.android.material.textfield.TextInputLayout
-                                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_marginStart="12dp"
-                                android:layout_weight="1"
-                                android:hint="پایین %">
-
-                                <com.google.android.material.textfield.TextInputEditText
-                                    android:id="@+id/etCropBottom"
-                                    android:layout_width="match_parent"
-                                    android:layout_height="wrap_content"
-                                    android:inputType="number"
-                                    android:maxLength="2" />
-                            </com.google.android.material.textfield.TextInputLayout>
-                        </LinearLayout>
-
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="12dp"
-                            android:orientation="horizontal">
-
-                            <com.google.android.material.textfield.TextInputLayout
-                                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:hint="چپ %">
-
-                                <com.google.android.material.textfield.TextInputEditText
-                                    android:id="@+id/etCropLeft"
-                                    android:layout_width="match_parent"
-                                    android:layout_height="wrap_content"
-                                    android:inputType="number"
-                                    android:maxLength="2" />
-                            </com.google.android.material.textfield.TextInputLayout>
-
-                            <com.google.android.material.textfield.TextInputLayout
-                                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_marginStart="12dp"
-                                android:layout_weight="1"
-                                android:hint="راست %">
-
-                                <com.google.android.material.textfield.TextInputEditText
-                                    android:id="@+id/etCropRight"
-                                    android:layout_width="match_parent"
-                                    android:layout_height="wrap_content"
-                                    android:inputType="number"
-                                    android:maxLength="2" />
-                            </com.google.android.material.textfield.TextInputLayout>
-                        </LinearLayout>
-                    </LinearLayout>
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <!-- راه‌اندازی -->
-            <com.google.android.material.card.MaterialCardView
-                style="@style
+        binding.btnStart.isEnabled = connected && !running
+        binding.btnStop.isEnabled = running
+        updating = false
+    }
+}
