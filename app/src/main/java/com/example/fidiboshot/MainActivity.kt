@@ -4,7 +4,6 @@ import android.content.Intent
 import android.content.res.ColorStateList
 import android.os.Bundle
 import android.provider.Settings
-import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -23,26 +22,6 @@ class MainActivity : AppCompatActivity() {
         binding.etStartPage.setText(Prefs.start(this).toString())
         binding.etEndPage.setText(Prefs.end(this).toString())
         binding.etDelay.setText(Prefs.delay(this).toString())
-
-        // خروجی
-        binding.toggleOutput.check(if (Prefs.outputPdf(this)) R.id.btnOutputPdf else R.id.btnOutputImage)
-        binding.toggleOutput.addOnButtonCheckedListener { _, id, checked ->
-            if (checked && !updating) Prefs.setOutputPdf(this, id == R.id.btnOutputPdf)
-        }
-
-        // اسکرین موضعی
-        binding.switchCrop.isChecked = Prefs.cropEnabled(this)
-        binding.layoutCropFields.visibility = if (Prefs.cropEnabled(this)) View.VISIBLE else View.GONE
-        binding.etCropTop.setText(Prefs.cropTop(this).toString())
-        binding.etCropBottom.setText(Prefs.cropBottom(this).toString())
-        binding.etCropLeft.setText(Prefs.cropLeft(this).toString())
-        binding.etCropRight.setText(Prefs.cropRight(this).toString())
-
-        binding.switchCrop.setOnCheckedChangeListener { _, checked ->
-            if (updating) return@setOnCheckedChangeListener
-            Prefs.setCropEnabled(this, checked)
-            binding.layoutCropFields.visibility = if (checked) View.VISIBLE else View.GONE
-        }
 
         binding.toggleDirection.addOnButtonCheckedListener { _, id, checked ->
             if (checked && !updating) Prefs.setRtl(this, id == R.id.btnRtl)
@@ -80,20 +59,7 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this, "اول Accessibility را روشن کن", Toast.LENGTH_LONG).show()
                 return@setOnClickListener
             }
-
-            // ذخیره کراپ
-            if (Prefs.cropEnabled(this)) {
-                val top = binding.etCropTop.text.toString().toIntOrNull() ?: 0
-                val bottom = binding.etCropBottom.text.toString().toIntOrNull() ?: 0
-                val left = binding.etCropLeft.text.toString().toIntOrNull() ?: 0
-                val right = binding.etCropRight.text.toString().toIntOrNull() ?: 0
-                Prefs.saveCrop(this, top, bottom, left, right)
-            }
-
             Prefs.saveRange(this, start, end, delay)
-            Prefs.setOutputPdf(this, binding.toggleOutput.checkedButtonId == R.id.btnOutputPdf)
-            Prefs.setRtl(this, rtl)
-
             service.startCapture(start, end, delay, rtl)
             Toast.makeText(this, "برو داخل کتاب فیدیبو", Toast.LENGTH_LONG).show()
         }
@@ -120,15 +86,6 @@ class MainActivity : AppCompatActivity() {
         val e = binding.etEndPage.text.toString().toIntOrNull() ?: return
         val d = binding.etDelay.text.toString().toLongOrNull() ?: return
         Prefs.saveRange(this, s, e, d)
-
-        if (Prefs.cropEnabled(this)) {
-            val top = binding.etCropTop.text.toString().toIntOrNull() ?: 0
-            val bottom = binding.etCropBottom.text.toString().toIntOrNull() ?: 0
-            val left = binding.etCropLeft.text.toString().toIntOrNull() ?: 0
-            val right = binding.etCropRight.text.toString().toIntOrNull() ?: 0
-            Prefs.saveCrop(this, top, bottom, left, right)
-        }
-        Prefs.setOutputPdf(this, binding.toggleOutput.checkedButtonId == R.id.btnOutputPdf)
     }
 
     private fun tint(view: android.view.View, colorRes: Int) {
@@ -152,13 +109,6 @@ class MainActivity : AppCompatActivity() {
         // جهت
         binding.toggleDirection.check(if (Prefs.rtl(this)) R.id.btnRtl else R.id.btnLtr)
 
-        // خروجی
-        binding.toggleOutput.check(if (Prefs.outputPdf(this)) R.id.btnOutputPdf else R.id.btnOutputImage)
-
-        // اسکرین موضعی
-        binding.switchCrop.isChecked = Prefs.cropEnabled(this)
-        binding.layoutCropFields.visibility = if (Prefs.cropEnabled(this)) View.VISIBLE else View.GONE
-
         // وضعیت
         val total = (ShotState.end - ShotState.start + 1).coerceAtLeast(1)
         when {
@@ -177,12 +127,8 @@ class MainActivity : AppCompatActivity() {
                 binding.progress.progress = done
             }
             ShotState.finished -> {
-                val out = if (Prefs.outputPdf(this)) "PDF" else "تصاویر"
                 binding.tvStatusTitle.text = "تمام شد"
-                binding.tvStatusSub.text = if (Prefs.outputPdf(this))
-                    "$total صفحه به صورت PDF در Downloads/FidiboPages ذخیره شد"
-                else
-                    "$total صفحه در Pictures/FidiboPages ذخیره شد"
+                binding.tvStatusSub.text = "${total} صفحه در Pictures/FidiboPages ذخیره شد"
                 tint(binding.statusDot, R.color.success)
                 binding.progress.max = total
                 binding.progress.progress = total
