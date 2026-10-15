@@ -7,11 +7,13 @@ import android.annotation.SuppressLint
 import android.content.ContentValues
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Path
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.graphics.pdf.PdfDocument
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -28,6 +30,9 @@ import android.view.accessibility.AccessibilityEvent
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.io.OutputStream
 import kotlin.math.abs
 
@@ -57,6 +62,11 @@ class FidiboScreenshotService : AccessibilityService() {
     private var resumePage: Int? = null   // اگر وسط کار متوقف شد، از همین صفحه ادامه بده
 
     private val handler = Handler(Looper.getMainLooper())
+
+    // پوشه موقت برای ذخیره تصاویر قبل از تبدیل به PDF یا انتقال به گالری
+    private val tempDir by lazy {
+        File(filesDir, "temp_pages").also { it.mkdirs() }
+    }
 
     // ---- میانبر شناور ----
     private var wm: WindowManager? = null
@@ -111,6 +121,7 @@ class FidiboScreenshotService : AccessibilityService() {
 
     fun startCapture(start: Int, end: Int, delay: Long, rtl: Boolean) {
         if (isRunning) return
+        clearTemp()                     // پاک کردن فایل‌های موقت قبلی
         Prefs.setRtl(this, rtl)
         resumePage = null
         ShotState.finished = false
@@ -121,7 +132,7 @@ class FidiboScreenshotService : AccessibilityService() {
         isRunning = true
         syncState()
         handler.post(captureRunnable)
-        Log.d(TAG, "Started: $start → $end | RTL=$rtl")
+        Log.d(TAG, "Started: $start → $end | RTL=\( rtl | PDF= \){Prefs.outputPdf(this)}")
     }
 
     fun stopCapture() = finishCapture()
@@ -135,6 +146,15 @@ class FidiboScreenshotService : AccessibilityService() {
         ShotState.finished = completed
         setOverlayVisible(true)
         syncState()
+
+        if (completed) {
+            if (Prefs.outputPdf(this)) {
+                generatePdfAndCleanup()
+            } else {
+                moveTempImagesToGallery()
+            }
+        }
+        // اگر وسط کار متوقف شد، فایل‌های موقت را نگه می‌داریم تا بتوان ادامه داد
         Log.d(TAG, "Stopped")
     }
 
@@ -198,11 +218,18 @@ class FidiboScreenshotService : AccessibilityService() {
                 override fun onSuccess(screenshot: ScreenshotResult) {
                     try {
                         val buffer = screenshot.hardwareBuffer
-                        val bitmap = Bitmap.wrapHardwareBuffer(buffer, screenshot.colorSpace)
+                        var bitmap = Bitmap.wrapHardwareBuffer(buffer, screenshot.colorSpace)
                             ?.copy(Bitmap.Config.ARGB_8888, false)
                         buffer.close()
-                        if (bitmap != null) saveBitmap(bitmap, page)
-                        else Log.e(TAG, "Bitmap null")
+                        if (bitmap != null) {
+                            // اسکرین موضعی (کراپ)
+                            if (Prefs.cropEnabled(this@FidiboScreenshotService)) {
+                                bitmap = cropBitmap(bitmap)
+                            }
+                            saveBitmapTemp(bitmap, page)
+                        } else {
+                            Log.e(TAG, "Bitmap null")
+                        }
                     } catch (e: Exception) {
                         Log.e(TAG, "Screenshot process error", e)
                     }
@@ -214,32 +241,127 @@ class FidiboScreenshotService : AccessibilityService() {
         )
     }
 
-    private fun saveBitmap(bitmap: Bitmap, page: Int) {
-        try {
-            val resolver = contentResolver
-            val fileName = "page_${String.format("%04d", page)}.png"
-            val cv = ContentValues().apply {
-                put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
-                put(MediaStore.Images.Media.MIME_TYPE, "image/png")
-                put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/FidiboPages")
-                put(MediaStore.Images.Media.IS_PENDING, 1)
-            }
-            val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, cv)
-            if (uri != null) {
-                resolver.openOutputStream(uri)?.use { out: OutputStream ->
-                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
-                }
-                cv.clear()
-                cv.put(MediaStore.Images.Media.IS_PENDING, 0)
-                resolver.update(uri, cv, null, null)
-            } else {
-                Log.e(TAG, "MediaStore insert failed")
-            }
+    /** کراپ بر اساس درصدهای ذخیره شده در Prefs */
+    private fun cropBitmap(src: Bitmap): Bitmap {
+        val w = src.width
+        val h = src.height
+        val topP = Prefs.cropTop(this) / 100f
+        val bottomP = Prefs.cropBottom(this) / 100f
+        val leftP = Prefs.cropLeft(this) / 100f
+        val rightP = Prefs.cropRight(this) / 100f
+
+        val left = (w * leftP).toInt()
+        val top = (h * topP).toInt()
+        val right = (w * (1f - rightP)).toInt()
+        val bottom = (h * (1f - bottomP)).toInt()
+
+        val cropW = (right - left).coerceAtLeast(1)
+        val cropH = (bottom - top).coerceAtLeast(1)
+
+        return try {
+            val cropped = Bitmap.createBitmap(src, left, top, cropW, cropH)
+            if (cropped != src) src.recycle()
+            cropped
         } catch (e: Exception) {
-            Log.e(TAG, "Save failed", e)
+            Log.e(TAG, "Crop failed", e)
+            src
+        }
+    }
+
+    /** ذخیره موقت در پوشه داخلی اپ */
+    private fun saveBitmapTemp(bitmap: Bitmap, page: Int) {
+        try {
+            val file = File(tempDir, "page_${String.format("%04d", page)}.png")
+            FileOutputStream(file).use { out ->
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+            }
+            Log.d(TAG, "Temp saved: ${file.name}")
+        } catch (e: Exception) {
+            Log.e(TAG, "Temp save failed", e)
         } finally {
             bitmap.recycle()
         }
+    }
+
+    /** انتقال تصاویر موقت به گالری (حالت خروجی تصویر) */
+    private fun moveTempImagesToGallery() {
+        val files = tempDir.listFiles { f ->
+            f.name.startsWith("page_") && f.name.endsWith(".png")
+        }?.sortedBy { it.name } ?: return
+
+        for (file in files) {
+            try {
+                val page = file.nameWithoutExtension.removePrefix("page_").toIntOrNull() ?: continue
+                val resolver = contentResolver
+                val fileName = "page_${String.format("%04d", page)}.png"
+                val cv = ContentValues().apply {
+                    put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
+                    put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                    put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/FidiboPages")
+                    put(MediaStore.Images.Media.IS_PENDING, 1)
+                }
+                val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, cv)
+                if (uri != null) {
+                    resolver.openOutputStream(uri)?.use { out ->
+                        FileInputStream(file).use { it.copyTo(out) }
+                    }
+                    cv.clear()
+                    cv.put(MediaStore.Images.Media.IS_PENDING, 0)
+                    resolver.update(uri, cv, null, null)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Move image failed", e)
+            }
+        }
+        clearTemp()
+    }
+
+    /** ساخت PDF از تصاویر موقت و ذخیره در Downloads */
+    private fun generatePdfAndCleanup() {
+        val files = tempDir.listFiles { f ->
+            f.name.startsWith("page_") && f.name.endsWith(".png")
+        }?.sortedBy { it.name } ?: return
+
+        if (files.isEmpty()) return
+
+        val pdf = PdfDocument()
+        try {
+            files.forEachIndexed { index, file ->
+                val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return@forEachIndexed
+                val pageInfo = PdfDocument.PageInfo.Builder(bitmap.width, bitmap.height, index + 1).create()
+                val page = pdf.startPage(pageInfo)
+                page.canvas.drawBitmap(bitmap, 0f, 0f, null)
+                pdf.finishPage(page)
+                bitmap.recycle()
+            }
+
+            val fileName = "Fidibo_\( {startPage}- \){endPage}_${System.currentTimeMillis()}.pdf"
+            val cv = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                put(MediaStore.Downloads.MIME_TYPE, "application/pdf")
+                put(MediaStore.Downloads.RELATIVE_PATH, "Download/FidiboPages")
+                put(MediaStore.Downloads.IS_PENDING, 1)
+            }
+            val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv)
+            if (uri != null) {
+                contentResolver.openOutputStream(uri)?.use { out ->
+                    pdf.writeTo(out)
+                }
+                cv.clear()
+                cv.put(MediaStore.Downloads.IS_PENDING, 0)
+                contentResolver.update(uri, cv, null, null)
+                Log.d(TAG, "PDF saved: $fileName")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "PDF generation failed", e)
+        } finally {
+            pdf.close()
+            clearTemp()
+        }
+    }
+
+    private fun clearTemp() {
+        tempDir.listFiles()?.forEach { it.delete() }
     }
 
     // ================= میانبر شناور =================
@@ -329,15 +451,25 @@ class FidiboScreenshotService : AccessibilityService() {
     private fun updateOverlayState() {
         val rtl = Prefs.rtl(this)
         val on = Color.parseColor("#1A73E8")
-        chipRtl?.apply { background = pill(if (rtl) on else Color.TRANSPARENT); setTextColor(if (rtl) Color.WHITE else Color.parseColor("#9AA0A6")) }
-        chipLtr?.apply { background = pill(if (!rtl) on else Color.TRANSPARENT); setTextColor(if (!rtl) Color.WHITE else Color.parseColor("#9AA0A6")) }
+        chipRtl?.apply {
+            background = pill(if (rtl) on else Color.TRANSPARENT)
+            setTextColor(if (rtl) Color.WHITE else Color.parseColor("#9AA0A6"))
+        }
+        chipLtr?.apply {
+            background = pill(if (!rtl) on else Color.TRANSPARENT)
+            setTextColor(if (!rtl) Color.WHITE else Color.parseColor("#9AA0A6"))
+        }
         toggleBtn?.apply {
             text = if (isRunning) "■" else "▶"
             background = pill(Color.parseColor(if (isRunning) "#D93025" else "#1E8E3E"))
         }
         counterView?.apply {
-            if (isRunning) { text = "$currentPage/$endPage"; visibility = View.VISIBLE }
-            else visibility = View.GONE
+            if (isRunning) {
+                text = "$currentPage/$endPage"
+                visibility = View.VISIBLE
+            } else {
+                visibility = View.GONE
+            }
         }
     }
 
@@ -393,73 +525,4 @@ class FidiboScreenshotService : AccessibilityService() {
                         }
                         longPressed -> { hideTrash(); snapToEdge(lp, o) }
                         moved -> snapToEdge(lp, o)
-                        e.action == MotionEvent.ACTION_UP -> openApp()
-                    }
-                }
-            }
-            true
-        }
-    }
-
-    private fun snapToEdge(lp: WindowManager.LayoutParams, o: View) {
-        val sw = resources.displayMetrics.widthPixels
-        val target = if (lp.x + o.width / 2 < sw / 2) dp(8) else sw - o.width - dp(8)
-        ValueAnimator.ofInt(lp.x, target).apply {
-            duration = 180
-            addUpdateListener {
-                lp.x = it.animatedValue as Int
-                if (overlay === o) runCatching { wm?.updateViewLayout(o, lp) }
-            }
-            start()
-        }
-    }
-
-    private fun openApp() {
-        packageManager.getLaunchIntentForPackage(packageName)?.let {
-            it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
-            startActivity(it)
-        }
-    }
-
-    // ---- سطل حذف ----
-    private fun isOverTrash(rawY: Float) = rawY > resources.displayMetrics.heightPixels - dp(170)
-
-    private fun showTrash() {
-        if (trashView != null) return
-        trashView = TextView(this).apply {
-            text = "✕"; gravity = Gravity.CENTER
-            setTextColor(Color.WHITE); textSize = 22f
-            background = pill(Color.parseColor("#99000000"))
-        }
-        val p = WindowManager.LayoutParams(
-            dp(64), dp(64),
-            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
-            PixelFormat.TRANSLUCENT
-        ).apply { gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL; y = dp(60) }
-        wm?.addView(trashView, p)
-    }
-
-    private fun highlightTrash(on: Boolean) {
-        trashView?.background = pill(Color.parseColor(if (on) "#D93025" else "#99000000"))
-        trashView?.animate()?.scaleX(if (on) 1.25f else 1f)?.scaleY(if (on) 1.25f else 1f)?.setDuration(120)?.start()
-    }
-
-    private fun hideTrash() {
-        trashView?.let { runCatching { wm?.removeView(it) } }
-        trashView = null
-    }
-
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
-
-    override fun onInterrupt() {
-        stopCapture()
-    }
-
-    override fun onDestroy() {
-        instance = null
-        stopCapture()
-        hideOverlay()
-        super.onDestroy()
-    }
-}
+                        e.action == Motion
