@@ -2,16 +2,17 @@ package com.example.fidiboshot
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
+import android.content.ContentValues
 import android.graphics.Bitmap
 import android.graphics.Path
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.provider.MediaStore
 import android.util.Log
 import android.view.Display
 import android.view.accessibility.AccessibilityEvent
-import java.io.File
-import java.io.FileOutputStream
+import java.io.OutputStream
 
 class FidiboScreenshotService : AccessibilityService() {
 
@@ -80,7 +81,7 @@ class FidiboScreenshotService : AccessibilityService() {
 
         val path = Path()
         if (swipeRightToLeft) {
-            // راست → چپ (کتاب‌های فارسی/عربی)
+            // راست → چپ
             path.moveTo(width * 0.85f, height * 0.5f)
             path.lineTo(width * 0.15f, height * 0.5f)
         } else {
@@ -139,16 +140,34 @@ class FidiboScreenshotService : AccessibilityService() {
 
     private fun saveBitmap(bitmap: Bitmap) {
         try {
-            val dir = File(getExternalFilesDir(null), "FidiboPages")
-            if (!dir.exists()) dir.mkdirs()
-
+            val resolver = contentResolver
             val fileName = "page_${String.format("%04d", currentPage)}.png"
-            val file = File(dir, fileName)
 
-            FileOutputStream(file).use { out ->
-                bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+            val contentValues = ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
+                put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/FidiboPages")
+                put(MediaStore.Images.Media.IS_PENDING, 1)
             }
-            Log.d(TAG, "Saved → ${file.absolutePath}")
+
+            val uri = resolver.insert(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                contentValues
+            )
+
+            if (uri != null) {
+                resolver.openOutputStream(uri)?.use { out: OutputStream ->
+                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                }
+
+                contentValues.clear()
+                contentValues.put(MediaStore.Images.Media.IS_PENDING, 0)
+                resolver.update(uri, contentValues, null, null)
+
+                Log.d(TAG, "Saved to gallery: $uri")
+            } else {
+                Log.e(TAG, "MediaStore insert failed")
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Save failed", e)
         } finally {
