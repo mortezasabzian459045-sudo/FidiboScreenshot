@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Fidibo Screenshot</string>
+    <string name="accessibility_desc">سرویس اسکرین‌شات خودکار برای فیدیبو. صفحه را ورق می‌زند و اسکرین می‌گیرد.</string>
+</resources>
