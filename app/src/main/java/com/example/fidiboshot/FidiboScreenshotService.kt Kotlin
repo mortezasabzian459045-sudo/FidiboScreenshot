@@ -41,7 +41,7 @@ class FidiboScreenshotService : AccessibilityService() {
 
             Log.d(TAG, "Capturing page $currentPage")
             takeScreenshotAndSave()
-            // کمی صبر بعد از اسکرین، بعد ورق بزن
+
             handler.postDelayed({
                 turnNextPage()
                 currentPage++
@@ -81,7 +81,6 @@ class FidiboScreenshotService : AccessibilityService() {
         val width = metrics.widthPixels.toFloat()
         val height = metrics.heightPixels.toFloat()
 
-        // سوایپ از راست به چپ (مناسب بیشتر کتاب‌خوان‌ها)
         val path = Path().apply {
             moveTo(width * 0.82f, height * 0.5f)
             lineTo(width * 0.18f, height * 0.5f)
@@ -94,6 +93,7 @@ class FidiboScreenshotService : AccessibilityService() {
             override fun onCompleted(gestureDescription: GestureDescription?) {
                 Log.d(TAG, "Page turned")
             }
+
             override fun onCancelled(gestureDescription: GestureDescription?) {
                 Log.w(TAG, "Gesture cancelled")
             }
@@ -143,9 +143,7 @@ class FidiboScreenshotService : AccessibilityService() {
         }
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // لازم نیست فعلاً چیزی گوش بدیم
-    }
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
 
     override fun onInterrupt() {
         stopCapture()
