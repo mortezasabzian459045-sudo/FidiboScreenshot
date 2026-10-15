@@ -214,7 +214,7 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- راه‌اندازی -->
+            <!-- ========== بخش جدید: خروجی نهایی ========== -->
             <com.google.android.material.card.MaterialCardView
                 style="@style/Widget.Fidibo.Card"
                 android:layout_width="match_parent"
@@ -231,53 +231,47 @@
                         style="@style/Text.Section"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="راه‌اندازی" />
+                        android:text="خروجی نهایی" />
 
-                    <LinearLayout
+                    <com.google.android.material.button.MaterialButtonToggleGroup
+                        android:id="@+id/toggleOutput"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="12dp"
-                        android:gravity="center_vertical"
-                        android:orientation="horizontal">
-
-                        <View
-                            android:id="@+id/accDot"
-                            android:layout_width="10dp"
-                            android:layout_height="10dp"
-                            android:background="@drawable/bg_dot" />
-
-                        <TextView
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_marginStart="10dp"
-                            android:layout_weight="1"
-                            android:text="سرویس Accessibility"
-                            android:textColor="@color/text_primary"
-                            android:textSize="15sp" />
-
-                        <TextView
-                            android:id="@+id/tvAccStatus"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginEnd="10dp"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="13sp" />
+                        app:selectionRequired="true"
+                        app:singleSelection="true">
 
                         <com.google.android.material.button.MaterialButton
-                            android:id="@+id/btnOpenAccessibility"
-                            style="@style/Widget.Material3.Button.TonalButton"
-                            android:layout_width="wrap_content"
-                            android:layout_height="40dp"
-                            android:text="فعال‌سازی"
-                            android:textSize="13sp" />
-                    </LinearLayout>
+                            android:id="@+id/btnOutputImage"
+                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            android:layout_width="0dp"
+                            android:layout_height="52dp"
+                            android:layout_weight="1"
+                            android:text="تصاویر PNG" />
 
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginTop="14dp"
-                        android:layout_marginBottom="6dp"
-                        android:background="@color/card_stroke" />
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnOutputPdf"
+                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            android:layout_width="0dp"
+                            android:layout_height="52dp"
+                            android:layout_weight="1"
+                            android:text="یک فایل PDF" />
+                    </com.google.android.material.button.MaterialButtonToggleGroup>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- ========== بخش جدید: اسکرین موضعی ========== -->
+            <com.google.android.material.card.MaterialCardView
+                style="@style/Widget.Fidibo.Card"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="18dp">
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -294,7 +288,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="میانبر شناور"
+                                android:text="اسکرین موضعی (کراپ)"
                                 android:textColor="@color/text_primary"
                                 android:textSize="15sp" />
 
@@ -302,52 +296,103 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
-                                android:text="کنترل روی سایر برنامه‌ها"
+                                android:text="برش حاشیه‌های صفحه کتاب"
                                 android:textColor="@color/text_secondary"
                                 android:textSize="12sp" />
                         </LinearLayout>
 
                         <com.google.android.material.materialswitch.MaterialSwitch
-                            android:id="@+id/switchFloating"
+                            android:id="@+id/switchCrop"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content" />
                     </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/layoutCropFields"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:orientation="vertical"
+                        android:visibility="gone">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal">
+
+                            <com.google.android.material.textfield.TextInputLayout
+                                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:hint="بالا %">
+
+                                <com.google.android.material.textfield.TextInputEditText
+                                    android:id="@+id/etCropTop"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:inputType="number"
+                                    android:maxLength="2" />
+                            </com.google.android.material.textfield.TextInputLayout>
+
+                            <com.google.android.material.textfield.TextInputLayout
+                                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="12dp"
+                                android:layout_weight="1"
+                                android:hint="پایین %">
+
+                                <com.google.android.material.textfield.TextInputEditText
+                                    android:id="@+id/etCropBottom"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:inputType="number"
+                                    android:maxLength="2" />
+                            </com.google.android.material.textfield.TextInputLayout>
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:orientation="horizontal">
+
+                            <com.google.android.material.textfield.TextInputLayout
+                                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:hint="چپ %">
+
+                                <com.google.android.material.textfield.TextInputEditText
+                                    android:id="@+id/etCropLeft"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:inputType="number"
+                                    android:maxLength="2" />
+                            </com.google.android.material.textfield.TextInputLayout>
+
+                            <com.google.android.material.textfield.TextInputLayout
+                                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="12dp"
+                                android:layout_weight="1"
+                                android:hint="راست %">
+
+                                <com.google.android.material.textfield.TextInputEditText
+                                    android:id="@+id/etCropRight"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:inputType="number"
+                                    android:maxLength="2" />
+                            </com.google.android.material.textfield.TextInputLayout>
+                        </LinearLayout>
+                    </LinearLayout>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
-        </LinearLayout>
-    </ScrollView>
 
-    <!-- نوار پایین -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="@color/bg_screen"
-        android:orientation="horizontal"
-        android:padding="16dp">
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnStart"
-            android:layout_width="0dp"
-            android:layout_height="56dp"
-            android:layout_weight="1.4"
-            android:text="شروع"
-            android:textSize="16sp"
-            app:cornerRadius="18dp"
-            app:icon="@drawable/ic_play" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnStop"
-            style="@style/Widget.Material3.Button.TonalButton"
-            android:layout_width="0dp"
-            android:layout_height="56dp"
-            android:layout_marginStart="12dp"
-            android:layout_weight="1"
-            android:backgroundTint="@color/danger_container"
-            android:text="توقف"
-            android:textColor="@color/danger"
-            android:textSize="16sp"
-            app:cornerRadius="18dp"
-            app:icon="@drawable/ic_stop"
-            app:iconTint="@color/danger" />
-    </LinearLayout>
-</LinearLayout>
+            <!-- راه‌اندازی -->
+            <com.google.android.material.card.MaterialCardView
+                style="@style
