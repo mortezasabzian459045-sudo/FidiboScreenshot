@@ -2,7 +2,6 @@ package com.example.fidiboshot
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
-import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Path
 import android.os.Build
@@ -17,11 +16,7 @@ import java.io.FileOutputStream
 class FidiboScreenshotService : AccessibilityService() {
 
     companion object {
-        const val ACTION_START = "com.example.fidiboshot.START"
-        const val ACTION_STOP = "com.example.fidiboshot.STOP"
-        const val EXTRA_START = "start"
-        const val EXTRA_END = "end"
-        const val EXTRA_DELAY = "delay"
+        var instance: FidiboScreenshotService? = null
         private const val TAG = "FidiboShot"
     }
 
@@ -29,6 +24,7 @@ class FidiboScreenshotService : AccessibilityService() {
     private var currentPage = 1
     private var endPage = 1
     private var delayMs = 3000L
+    private var swipeRightToLeft = true
 
     private val handler = Handler(Looper.getMainLooper())
 
@@ -45,32 +41,33 @@ class FidiboScreenshotService : AccessibilityService() {
             handler.postDelayed({
                 turnNextPage()
                 currentPage++
-                handler.postDelayed(this, delayMs)
-            }, 400)
+                if (isRunning && currentPage <= endPage) {
+                    handler.postDelayed(this, delayMs)
+                } else {
+                    stopCapture()
+                }
+            }, 600)
         }
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
-            ACTION_START -> {
-                currentPage = intent.getIntExtra(EXTRA_START, 1)
-                endPage = intent.getIntExtra(EXTRA_END, 1)
-                delayMs = intent.getLongExtra(EXTRA_DELAY, 3000L)
-                startCapture()
-            }
-            ACTION_STOP -> stopCapture()
-        }
-        return START_STICKY
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        instance = this
+        Log.d(TAG, "Service connected")
     }
 
-    private fun startCapture() {
+    fun startCapture(start: Int, end: Int, delay: Long, rtl: Boolean) {
         if (isRunning) return
+        currentPage = start
+        endPage = end
+        delayMs = delay
+        swipeRightToLeft = rtl
         isRunning = true
         handler.post(captureRunnable)
-        Log.d(TAG, "Started capture from $currentPage to $endPage")
+        Log.d(TAG, "Started: $start → $end | RTL=$rtl")
     }
 
-    private fun stopCapture() {
+    fun stopCapture() {
         isRunning = false
         handler.removeCallbacksAndMessages(null)
         Log.d(TAG, "Stopped")
@@ -81,12 +78,18 @@ class FidiboScreenshotService : AccessibilityService() {
         val width = metrics.widthPixels.toFloat()
         val height = metrics.heightPixels.toFloat()
 
-        val path = Path().apply {
-            moveTo(width * 0.82f, height * 0.5f)
-            lineTo(width * 0.18f, height * 0.5f)
+        val path = Path()
+        if (swipeRightToLeft) {
+            // راست → چپ (کتاب‌های فارسی/عربی)
+            path.moveTo(width * 0.85f, height * 0.5f)
+            path.lineTo(width * 0.15f, height * 0.5f)
+        } else {
+            // چپ → راست
+            path.moveTo(width * 0.15f, height * 0.5f)
+            path.lineTo(width * 0.85f, height * 0.5f)
         }
 
-        val stroke = GestureDescription.StrokeDescription(path, 0, 280)
+        val stroke = GestureDescription.StrokeDescription(path, 0, 300)
         val gesture = GestureDescription.Builder().addStroke(stroke).build()
 
         dispatchGesture(gesture, object : GestureResultCallback() {
@@ -101,29 +104,37 @@ class FidiboScreenshotService : AccessibilityService() {
     }
 
     private fun takeScreenshotAndSave() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            takeScreenshot(
-                Display.DEFAULT_DISPLAY,
-                mainExecutor,
-                object : TakeScreenshotCallback {
-                    override fun onSuccess(screenshot: ScreenshotResult) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            Log.e(TAG, "Need Android 11+")
+            return
+        }
+
+        takeScreenshot(
+            Display.DEFAULT_DISPLAY,
+            mainExecutor,
+            object : TakeScreenshotCallback {
+                override fun onSuccess(screenshot: ScreenshotResult) {
+                    try {
                         val buffer = screenshot.hardwareBuffer
-                        val colorSpace = screenshot.colorSpace
-                        val bitmap = Bitmap.wrapHardwareBuffer(buffer, colorSpace)
+                        val bitmap = Bitmap.wrapHardwareBuffer(buffer, screenshot.colorSpace)
                             ?.copy(Bitmap.Config.ARGB_8888, false)
                         buffer.close()
 
-                        bitmap?.let { saveBitmap(it) }
-                    }
-
-                    override fun onFailure(errorCode: Int) {
-                        Log.e(TAG, "Screenshot failed: $errorCode")
+                        if (bitmap != null) {
+                            saveBitmap(bitmap)
+                        } else {
+                            Log.e(TAG, "Bitmap null")
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Screenshot process error", e)
                     }
                 }
-            )
-        } else {
-            Log.e(TAG, "Android 11+ required for takeScreenshot")
-        }
+
+                override fun onFailure(errorCode: Int) {
+                    Log.e(TAG, "takeScreenshot failed code=$errorCode")
+                }
+            }
+        )
     }
 
     private fun saveBitmap(bitmap: Bitmap) {
@@ -131,11 +142,13 @@ class FidiboScreenshotService : AccessibilityService() {
             val dir = File(getExternalFilesDir(null), "FidiboPages")
             if (!dir.exists()) dir.mkdirs()
 
-            val file = File(dir, "page_${String.format("%04d", currentPage)}.png")
+            val fileName = "page_${String.format("%04d", currentPage)}.png"
+            val file = File(dir, fileName)
+
             FileOutputStream(file).use { out ->
                 bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
             }
-            Log.d(TAG, "Saved: ${file.absolutePath}")
+            Log.d(TAG, "Saved → ${file.absolutePath}")
         } catch (e: Exception) {
             Log.e(TAG, "Save failed", e)
         } finally {
@@ -150,6 +163,7 @@ class FidiboScreenshotService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        instance = null
         stopCapture()
         super.onDestroy()
     }
