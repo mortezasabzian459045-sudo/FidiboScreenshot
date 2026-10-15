@@ -1,8 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.FidiboScreenshot" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="colorPrimary">#1A73E8</item>
-        <item name="colorPrimaryVariant">#0D47A1</item>
-        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorPrimary">@color/brand</item>
+        <item name="colorOnPrimary">@color/bg_screen</item>
+        <item name="colorSurface">@color/card_bg</item>
+        <item name="android:windowBackground">@color/bg_screen</item>
+        <item name="android:statusBarColor">@color/bg_screen</item>
+        <item name="android:navigationBarColor">@color/bg_screen</item>
+        <item name="android:windowLightStatusBar">@bool/light_bars</item>
+        <item name="android:windowLightNavigationBar">@bool/light_bars</item>
+    </style>
+
+    <style name="Widget.Fidibo.Card" parent="Widget.Material3.CardView.Outlined">
+        <item name="cardBackgroundColor">@color/card_bg</item>
+        <item name="strokeColor">@color/card_stroke</item>
+        <item name="strokeWidth">1dp</item>
+        <item name="cardCornerRadius">20dp</item>
+        <item name="cardElevation">0dp</item>
+    </style>
+
+    <style name="Text.Section" parent="">
+        <item name="android:textSize">13sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/brand</item>
     </style>
 </resources>
