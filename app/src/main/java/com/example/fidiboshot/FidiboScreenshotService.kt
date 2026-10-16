@@ -10,6 +10,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Path
 import android.graphics.PixelFormat
+import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
@@ -25,6 +26,7 @@ import android.view.View
 import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -67,6 +69,9 @@ class FidiboScreenshotService : AccessibilityService() {
     private var toggleBtn: TextView? = null
     private var chipRtl: TextView? = null
     private var chipLtr: TextView? = null
+    private var chipCrop: TextView? = null
+    private var regionRoot: FrameLayout? = null
+    private var overlayWasVisible = true
 
     private val captureRunnable = object : Runnable {
         override fun run() {
@@ -201,7 +206,7 @@ class FidiboScreenshotService : AccessibilityService() {
                         val bitmap = Bitmap.wrapHardwareBuffer(buffer, screenshot.colorSpace)
                             ?.copy(Bitmap.Config.ARGB_8888, false)
                         buffer.close()
-                        if (bitmap != null) saveBitmap(bitmap, page)
+                        if (bitmap != null) saveBitmap(applyCrop(bitmap), page)
                         else Log.e(TAG, "Bitmap null")
                     } catch (e: Exception) {
                         Log.e(TAG, "Screenshot process error", e)
@@ -212,6 +217,25 @@ class FidiboScreenshotService : AccessibilityService() {
                 }
             }
         )
+    }
+
+    /** اگر محدوده‌ی سفارشی تنظیم شده باشد، تصویر را برش می‌دهد */
+    private fun applyCrop(src: Bitmap): Bitmap {
+        if (!Prefs.hasCrop(this)) return src
+        val f = Prefs.crop(this)
+        val x = (f.left * src.width).toInt().coerceIn(0, src.width - 1)
+        val y = (f.top * src.height).toInt().coerceIn(0, src.height - 1)
+        val w = ((f.right - f.left) * src.width).toInt().coerceIn(1, src.width - x)
+        val h = ((f.bottom - f.top) * src.height).toInt().coerceIn(1, src.height - y)
+        if (x == 0 && y == 0 && w == src.width && h == src.height) return src
+        return try {
+            val out = Bitmap.createBitmap(src, x, y, w, h)
+            if (out !== src) src.recycle()
+            out
+        } catch (e: Exception) {
+            Log.e(TAG, "Crop failed", e)
+            src
+        }
     }
 
     private fun saveBitmap(bitmap: Bitmap, page: Int) {
@@ -297,6 +321,12 @@ class FidiboScreenshotService : AccessibilityService() {
         chipLtr = chip("←") { Prefs.setRtl(this, false); ShotState.notifyChanged(); updateOverlayState() }
         root.addView(chipRtl); root.addView(chipLtr)
 
+        chipCrop = chip("▣") {
+            if (isRunning) Toast.makeText(this, "اول توقف بزن", Toast.LENGTH_SHORT).show()
+            else showRegionSelector()
+        }
+        root.addView(chipCrop)
+
         toggleBtn = TextView(this).apply {
             gravity = Gravity.CENTER; textSize = 16f; setTextColor(Color.WHITE)
             layoutParams = LinearLayout.LayoutParams(dp(40), dp(40)).apply { marginStart = dp(8) }
@@ -331,6 +361,8 @@ class FidiboScreenshotService : AccessibilityService() {
         val on = Color.parseColor("#1A73E8")
         chipRtl?.apply { background = pill(if (rtl) on else Color.TRANSPARENT); setTextColor(if (rtl) Color.WHITE else Color.parseColor("#9AA0A6")) }
         chipLtr?.apply { background = pill(if (!rtl) on else Color.TRANSPARENT); setTextColor(if (!rtl) Color.WHITE else Color.parseColor("#9AA0A6")) }
+        val cropOn = Prefs.hasCrop(this)
+        chipCrop?.apply { background = pill(if (cropOn) on else Color.TRANSPARENT); setTextColor(if (cropOn) Color.WHITE else Color.parseColor("#9AA0A6")) }
         toggleBtn?.apply {
             text = if (isRunning) "■" else "▶"
             background = pill(Color.parseColor(if (isRunning) "#D93025" else "#1E8E3E"))
@@ -450,16 +482,34 @@ class FidiboScreenshotService : AccessibilityService() {
         trashView = null
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
+    // ================= انتخاب محدوده‌ی اسکرین =================
 
-    override fun onInterrupt() {
-        stopCapture()
+    /** چند ثانیه صبر می‌کند تا کاربر وارد کتاب شود، بعد کادر را نشان می‌دهد */
+    fun showRegionSelectorDelayed(delayMs: Long = 5000L) {
+        handler.postDelayed({ showRegionSelector() }, delayMs)
     }
 
-    override fun onDestroy() {
-        instance = null
-        stopCapture()
-        hideOverlay()
-        super.onDestroy()
-    }
-}
+    fun showRegionSelector() {
+        if (regionRoot != null || isRunning) return
+        val manager = getSystemService(WINDOW_SERVICE) as WindowManager
+        wm = manager
+
+        // میانبر شناور موقتاً پنهان می‌شود
+        overlayWasVisible = overlay?.visibility == View.VISIBLE
+        setOverlayVisible(false)
+
+        val start = if (Prefs.hasCrop(this)) Prefs.crop(this) else RectF(0.06f, 0.08f, 0.94f, 0.92f)
+        val selector = RegionSelectorView(this, start)
+
+        val root = FrameLayout(this)
+        root.addView(selector, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+
+        // راهنما بالای صفحه
+        val hint = TextView(this).apply {
+            text = "کادر را جابه‌جا کن یا از گوشه‌ها و لبه‌ها اندازه‌اش را تنظیم کن"
+            setTextColor(Color.WHITE); textSize = 13f; gravity = Gravity.CENTER
+            setPadding(dp(16), dp(8), dp(16), dp(8))
+            background = pill(Color.parseColor("#CC202124"))
+        }
+        root.addView
