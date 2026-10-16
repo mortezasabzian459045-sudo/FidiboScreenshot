@@ -67,6 +67,27 @@ class MainActivity : AppCompatActivity() {
         binding.btnStop.setOnClickListener {
             FidiboScreenshotService.instance?.stopCapture()
         }
+
+        binding.btnSetCrop.setOnClickListener {
+            val service = FidiboScreenshotService.instance
+            if (service == null) {
+                Toast.makeText(this, "اول Accessibility را روشن کن", Toast.LENGTH_LONG).show()
+                return@setOnClickListener
+            }
+            if (ShotState.running) {
+                Toast.makeText(this, "اول توقف بزن", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            Toast.makeText(this, "برو داخل کتاب فیدیبو؛ ۵ ثانیه دیگر کادر نمایش داده می‌شود", Toast.LENGTH_LONG).show()
+            service.showRegionSelectorDelayed(5000L)
+            moveTaskToBack(true)
+        }
+
+        binding.btnResetCrop.setOnClickListener {
+            Prefs.clearCrop(this)
+            ShotState.notifyChanged()
+            render()
+        }
     }
 
     override fun onResume() {
@@ -140,6 +161,19 @@ class MainActivity : AppCompatActivity() {
                 binding.progress.progress = 0
             }
         }
+
+        // محدوده اسکرین
+        if (Prefs.hasCrop(this)) {
+            val m = resources.displayMetrics
+            val f = Prefs.crop(this)
+            val w = ((f.right - f.left) * m.widthPixels).toInt()
+            val h = ((f.bottom - f.top) * m.heightPixels).toInt()
+            binding.tvCropStatus.text = "سفارشی • $w × $h پیکسل"
+        } else {
+            binding.tvCropStatus.text = "کل صفحه"
+        }
+        binding.btnSetCrop.isEnabled = connected && !running
+        binding.btnResetCrop.isEnabled = Prefs.hasCrop(this) && !running
 
         binding.btnStart.isEnabled = connected && !running
         binding.btnStop.isEnabled = running
