@@ -3,6 +3,8 @@ package com.example.fidiboshot
 import android.content.Intent
 import android.content.res.ColorStateList
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -26,6 +28,25 @@ class MainActivity : AppCompatActivity() {
         binding.toggleDirection.addOnButtonCheckedListener { _, id, checked ->
             if (checked && !updating) Prefs.setRtl(this, id == R.id.btnRtl)
         }
+
+        binding.toggleFormat.addOnButtonCheckedListener { _, id, checked ->
+            if (checked && !updating) Prefs.setPdf(this, id == R.id.btnFmtPdf)
+        }
+
+        binding.switchCrop.setOnCheckedChangeListener { _, checked ->
+            if (updating) return@setOnCheckedChangeListener
+            if (checked && Prefs.crop(this) == null) {
+                // هنوز ناحیه‌ای انتخاب نشده
+                Prefs.setCropEnabled(this, false)
+                render()
+                startAreaSelection()
+                return@setOnCheckedChangeListener
+            }
+            Prefs.setCropEnabled(this, checked)
+            render()
+        }
+
+        binding.btnSelectArea.setOnClickListener { startAreaSelection() }
 
         binding.btnOpenAccessibility.setOnClickListener {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
@@ -69,6 +90,18 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** بعد از چند ثانیه قاب انتخاب ناحیه روی صفحه‌ی فعلی (کتاب) نمایش داده می‌شود */
+    private fun startAreaSelection() {
+        if (FidiboScreenshotService.instance == null) {
+            Toast.makeText(this, "اول Accessibility را روشن کن", Toast.LENGTH_LONG).show()
+            return
+        }
+        Toast.makeText(this, "۴ ثانیه وقت داری بری داخل کتاب فیدیبو", Toast.LENGTH_LONG).show()
+        Handler(Looper.getMainLooper()).postDelayed({
+            FidiboScreenshotService.instance?.showCropSelector()
+        }, 4000)
+    }
+
     override fun onResume() {
         super.onResume()
         ShotState.listener = { render() }
@@ -96,6 +129,7 @@ class MainActivity : AppCompatActivity() {
         updating = true
         val connected = FidiboScreenshotService.instance != null
         val running = ShotState.running
+        val processing = ShotState.processing
 
         // Accessibility
         binding.tvAccStatus.text = if (connected) "فعال" else "غیرفعال"
@@ -106,11 +140,26 @@ class MainActivity : AppCompatActivity() {
         binding.switchFloating.isEnabled = connected
         binding.switchFloating.isChecked = connected && Prefs.floating(this)
 
-        // جهت
+        // جهت و فرمت خروجی
         binding.toggleDirection.check(if (Prefs.rtl(this)) R.id.btnRtl else R.id.btnLtr)
+        binding.toggleFormat.check(if (Prefs.pdf(this)) R.id.btnFmtPdf else R.id.btnFmtImg)
+
+        // ناحیه‌ی برش
+        val crop = Prefs.crop(this)
+        binding.switchCrop.isChecked = crop != null && Prefs.cropEnabled(this)
+        binding.tvCropSummary.text = if (crop == null) {
+            "هنوز ناحیه‌ای انتخاب نشده (کل صفحه)"
+        } else {
+            val w = ((crop[2] - crop[0]) * 100).toInt()
+            val h = ((crop[3] - crop[1]) * 100).toInt()
+            "ناحیه‌ی ذخیره‌شده: $w٪ عرض × $h٪ ارتفاع"
+        }
+        binding.btnSelectArea.isEnabled = connected && !running && !processing
+        binding.switchCrop.isEnabled = !running && !processing
 
         // وضعیت
         val total = (ShotState.end - ShotState.start + 1).coerceAtLeast(1)
+        val done = (ShotState.current - ShotState.start).coerceIn(0, total)
         when {
             !connected -> {
                 binding.tvStatusTitle.text = "نیاز به فعال‌سازی"
@@ -118,20 +167,26 @@ class MainActivity : AppCompatActivity() {
                 tint(binding.statusDot, R.color.warning)
                 binding.progress.progress = 0
             }
+            processing -> {
+                binding.tvStatusTitle.text = "در حال ساخت PDF…"
+                binding.tvStatusSub.text = "کمی صبر کن، صفحه‌ها در حال جمع شدن هستند"
+                tint(binding.statusDot, R.color.brand)
+                binding.progress.max = total
+                binding.progress.progress = total
+            }
             running -> {
-                val done = (ShotState.current - ShotState.start).coerceIn(0, total)
                 binding.tvStatusTitle.text = "در حال اجرا"
                 binding.tvStatusSub.text = "صفحه ${ShotState.current} از ${ShotState.end}"
                 tint(binding.statusDot, R.color.brand)
                 binding.progress.max = total
                 binding.progress.progress = done
             }
-            ShotState.finished -> {
-                binding.tvStatusTitle.text = "تمام شد"
-                binding.tvStatusSub.text = "${total} صفحه در Pictures/FidiboPages ذخیره شد"
-                tint(binding.statusDot, R.color.success)
+            ShotState.resultText != null -> {
+                binding.tvStatusTitle.text = if (ShotState.finished) "تمام شد" else "متوقف شد"
+                binding.tvStatusSub.text = ShotState.resultText
+                tint(binding.statusDot, if (ShotState.finished) R.color.success else R.color.warning)
                 binding.progress.max = total
-                binding.progress.progress = total
+                binding.progress.progress = if (ShotState.finished) total else done
             }
             else -> {
                 binding.tvStatusTitle.text = "آماده"
@@ -141,7 +196,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        binding.btnStart.isEnabled = connected && !running
+        binding.btnStart.isEnabled = connected && !running && !processing
         binding.btnStop.isEnabled = running
         updating = false
     }
